@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "rag_text": {
+          "type": "standard"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "chunk_id": { "type": "keyword" },
+      "doc_id": { "type": "keyword" },
+      "text": {
+        "type": "text",
+        "analyzer": "rag_text",
+        "search_analyzer": "rag_text"
+      },
+      "heading_path": { "type": "text", "analyzer": "rag_text" },
+      "source": { "type": "keyword" },
+      "ingested_at": { "type": "date" }
+    }
+  }
+}
