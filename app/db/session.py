@@ -1,3 +1,10 @@
+"""
+SQLAlchemy 引擎与会话工厂。
+
+- `pool_pre_ping`：连接池取出连接前 ping，避免 MySQL 断连后首次查询失败；
+- `echo`：debug 时打印 SQL，便于排障。
+"""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 

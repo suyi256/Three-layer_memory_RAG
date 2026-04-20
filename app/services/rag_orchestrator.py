@@ -1,3 +1,17 @@
+"""
+RAG 编排层：串联「入库」与「问答」全流程。
+
+入库：
+  MySQL 登记 → Word 解析 → 分块 → 嵌入 → 按 doc_id 清理旧索引 → ES bulk + Chroma upsert → 更新状态。
+
+问答：
+  查询嵌入 → Chroma TopK + ES TopK → RRF 融合 → 取正文证据 → 调用大模型。
+
+线程说明：
+  Chroma Python 客户端为同步 IO，使用 anyio.to_thread 避免阻塞事件循环；
+  SQLAlchemy Session 仅在协程主流程中使用，不跨线程传递。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -21,6 +35,8 @@ from app.services.word_parser import parse_docx_bytes
 
 @dataclass(frozen=True)
 class SourceSnippet:
+    """返回给前端的单条引用摘要（含融合分数）。"""
+
     chunk_id: str
     doc_id: str
     text: str
@@ -47,6 +63,7 @@ class RAGOrchestrator:
         self._es = ESStore(settings, es_client)
 
     async def _embed_many(self, texts: list[str]) -> list[list[float]]:
+        """批量嵌入，控制单批大小以适配上游 API 限制。"""
         batch = 64
         out: list[list[float]] = []
         for i in range(0, len(texts), batch):
@@ -62,6 +79,11 @@ class RAGOrchestrator:
         filename: str,
         doc_id: str | None,
     ) -> dict:
+        """
+        摄入一个 .docx：写 MySQL、双写 ES/Chroma。
+
+        :param doc_id: 若为空则生成 UUID；同一 doc_id 多次上传会递增 version 并覆盖旧索引。
+        """
         if not filename.lower().endswith((".docx",)):
             raise ValueError("仅支持 .docx 文件")
 
@@ -96,6 +118,7 @@ class RAGOrchestrator:
             texts = [c.text for c in chunks]
             embeddings = await self._embed_many(texts)
 
+            # 同一 doc_id 可能多次版本化：先删后写，避免 ES/Chroma 残留旧 chunk
             await self._es.delete_by_doc_id(doc_key)
             await anyio.to_thread.run_sync(self._chroma.delete_by_doc_id, doc_key)
 
@@ -126,8 +149,14 @@ class RAGOrchestrator:
         question: str,
         doc_id: str | None = None,
     ) -> dict:
+        """
+        混合检索 + 生成答案。
+
+        :param doc_id: 非空时两路检索均带上文档过滤，缩小召回范围。
+        """
         q_emb = await self._embedder.embed_query(question)
 
+        # 向量路：Chroma（同步客户端 → 线程池）
         vec_ids = await anyio.to_thread.run_sync(
             lambda: self._chroma.query(
                 q_emb,
@@ -135,6 +164,7 @@ class RAGOrchestrator:
                 doc_id=doc_id,
             ),
         )
+        # 词法路：Elasticsearch BM25
         lex_ids = await self._es.search_lexical(
             question,
             self._settings.retrieve_k_lexical,
@@ -174,6 +204,7 @@ class RAGOrchestrator:
             evidence_blocks.append(f"{head}\n{s.text}")
         evidence = "\n\n".join(evidence_blocks)
         if not evidence.strip():
+            # 避免模型在零证据下自由发挥编造
             evidence = "（检索未命中任何片段；请直接说明无法从知识库作答，不要编造事实。）"
 
         system = (

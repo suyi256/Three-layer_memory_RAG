@@ -1,3 +1,11 @@
+"""
+文本分块：将 ParsedSegment 列表转为带稳定 chunk_id 的 TextChunk。
+
+设计要点：
+- `chunk_id` 由 doc_id、version、序号与文本摘要哈希生成，便于 Chroma/ES 以同一主键对齐；
+- 超长单段使用滑动窗口 + overlap，减轻截断边界信息丢失。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +16,8 @@ from app.services.word_parser import ParsedSegment
 
 @dataclass(frozen=True)
 class TextChunk:
+    """入库与索引的最小单元；chunk_id 在向量库与 ES 中必须一致。"""
+
     chunk_id: str
     doc_id: str
     version: int
@@ -17,6 +27,7 @@ class TextChunk:
 
 
 def _hash_chunk_id(doc_id: str, version: int, ordinal: int, text: str) -> str:
+    """生成稳定且较短的 chunk 主键（截断 SHA256）。"""
     raw = f"{doc_id}|{version}|{ordinal}|{text[:512]}".encode("utf-8", errors="ignore")
     return hashlib.sha256(raw).hexdigest()[:40]
 

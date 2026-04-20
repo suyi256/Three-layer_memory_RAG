@@ -1,3 +1,11 @@
+"""
+FastAPI 应用入口。
+
+职责：
+- 在 lifespan 中初始化 ES、Chroma、嵌入与对话客户端，并挂到 app.state；
+- 挂载版本化 API 路由（/v1）。
+"""
+
 from contextlib import asynccontextmanager
 
 from elasticsearch import AsyncElasticsearch
@@ -12,8 +20,10 @@ from app.services.llm import ChatClient
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """应用启动时创建外部依赖，关闭时释放（如 ES 异步客户端）。"""
     settings = get_settings()
     app.state.settings = settings
+    # 仅用于健康检查与是否放行 RAG：无 Key 时仍可启动服务，但入库/问答会 503
     app.state.openai_enabled = bool(settings.openai_api_key)
     app.state.embedder = EmbeddingClient(settings)
     app.state.chat = ChatClient(settings)
@@ -24,6 +34,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """工厂函数：便于测试时替换配置或挂载额外中间件。"""
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(api_router, prefix="/v1")

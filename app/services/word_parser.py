@@ -1,3 +1,11 @@
+"""
+Word（.docx）解析：将段落与表格转为「带标题路径」的文本片段，供后续分块。
+
+关键点：
+- 通过 Word 样式识别标题（中英样式名），维护 `heading_stack` 表示当前章节路径；
+- 表格按行拼接为制表符分隔文本，并继承当前标题路径。
+"""
+
 from __future__ import annotations
 
 import io
@@ -8,13 +16,14 @@ from docx import Document
 
 @dataclass(frozen=True)
 class ParsedSegment:
-    """来自 Word 的一段连续文本及其标题路径。"""
+    """来自 Word 的一段连续文本及其标题路径（用于检索展示与分块上下文）。"""
 
     text: str
     heading_path: str
 
 
 def _is_heading(style_name: str | None) -> bool:
+    """判断段落是否为标题样式（兼容中英文模板）。"""
     if not style_name:
         return False
     s = style_name.lower()
@@ -22,7 +31,7 @@ def _is_heading(style_name: str | None) -> bool:
 
 
 def parse_docx_bytes(data: bytes) -> list[ParsedSegment]:
-    """解析 .docx，按段落提取文本并附带当前标题路径。"""
+    """解析 .docx：段落走标题栈；表格单独成段。"""
     doc = Document(io.BytesIO(data))
     heading_stack: list[str] = []
     segments: list[ParsedSegment] = []
@@ -31,6 +40,7 @@ def parse_docx_bytes(data: bytes) -> list[ParsedSegment]:
         text = (para.text or "").strip()
         style_name = para.style.name if para.style is not None else None
         if _is_heading(style_name) and text:
+            # Heading 1..6：用样式名中的数字推断层级，裁剪栈以保持大纲正确
             level = 1
             if style_name and style_name.lower().startswith("heading"):
                 parts = style_name.split()

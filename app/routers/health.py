@@ -1,3 +1,7 @@
+"""
+健康检查：用于编排依赖是否就绪（不校验 MySQL 连接，可按需扩展）。
+"""
+
 from typing import Any
 
 import httpx
@@ -9,6 +13,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
+    """返回整体状态、ES 集群信息、Chroma HTTP 心跳与是否配置了 OpenAI Key。"""
     settings = request.app.state.settings
     es: AsyncElasticsearch = request.app.state.es
     out: dict[str, Any] = {"status": "ok", "openai_configured": bool(request.app.state.openai_enabled)}

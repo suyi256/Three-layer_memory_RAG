@@ -1,3 +1,5 @@
+"""聚合 v1 下所有子路由（健康检查、入库、RAG 问答）。"""
+
 from fastapi import APIRouter
 
 from app.routers import health, ingest, rag

@@ -1,3 +1,9 @@
+"""
+对话生成：调用 OpenAI 兼容 `/v1/chat/completions`。
+
+temperature 较低以减轻幻觉；系统提示词在编排层传入，控制引用与语言风格。
+"""
+
 from __future__ import annotations
 
 import httpx
@@ -6,7 +12,7 @@ from app.config import Settings
 
 
 class ChatClient:
-    """OpenAI 兼容 Chat Completions。"""
+    """OpenAI 兼容 Chat Completions 的轻量封装。"""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
